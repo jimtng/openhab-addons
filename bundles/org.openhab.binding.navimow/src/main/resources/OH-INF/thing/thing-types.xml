@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<thing:thing-descriptions bindingId="navimow"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:thing="https://openhab.org/schemas/thing-description/v1.0.0"
+	xsi:schemaLocation="https://openhab.org/schemas/thing-description/v1.0.0 https://openhab.org/schemas/thing-description-1.0.0.xsd">
+
+	<!-- Bridge: Navimow Cloud Account -->
+	<bridge-type id="bridge">
+		<label>Navimow Account</label>
+		<description>Connects to the Navimow cloud service and manages MQTT real-time updates.</description>
+
+		<config-description>
+			<parameter name="accessToken" type="text" required="true">
+				<context>password</context>
+				<label>Access Token</label>
+				<description>OAuth2 access token for the Navimow cloud. Obtain this from your Navimow connected app or Home
+					Assistant integration.</description>
+			</parameter>
+			<parameter name="pollingInterval" type="integer" unit="s" min="60">
+				<label>Polling Interval</label>
+				<description>Interval in seconds for HTTP fallback polling. Set to 0 to disable polling (MQTT only).</description>
+				<default>3600</default>
+				<advanced>true</advanced>
+			</parameter>
+			<parameter name="apiBaseUrl" type="text">
+				<label>API Base URL</label>
+				<description>Override the Navimow API base URL. Leave empty to use the default.</description>
+				<default>https://navimow-fra.ninebot.com</default>
+				<advanced>true</advanced>
+			</parameter>
+		</config-description>
+	</bridge-type>
+
+	<!-- Thing: Navimow Mower -->
+	<thing-type id="mower">
+		<supported-bridge-type-refs>
+			<bridge-type-ref id="bridge"/>
+		</supported-bridge-type-refs>
+
+		<label>Navimow Mower</label>
+		<description>A Segway Navimow robotic lawn mower.</description>
+
+		<channels>
+			<channel id="status" typeId="mower-status"/>
+			<channel id="battery-level" typeId="system.battery-level"/>
+			<channel id="signal-strength" typeId="signal-strength"/>
+			<channel id="latitude" typeId="latitude"/>
+			<channel id="longitude" typeId="longitude"/>
+			<channel id="error-code" typeId="error-code"/>
+			<channel id="command" typeId="mower-command"/>
+		</channels>
+
+		<config-description>
+			<parameter name="deviceId" type="text" required="true">
+				<label>Device ID</label>
+				<description>The unique device ID of the Navimow mower.</description>
+			</parameter>
+		</config-description>
+	</thing-type>
+
+	<!-- Channel Types -->
+
+	<channel-type id="mower-status">
+		<item-type>String</item-type>
+		<label>Status</label>
+		<description>Current operational state of the mower.</description>
+		<state readOnly="true">
+			<options>
+				<option value="idle">Idle</option>
+				<option value="mowing">Mowing</option>
+				<option value="paused">Paused</option>
+				<option value="docked">Docked</option>
+				<option value="charging">Charging</option>
+				<option value="returning">Returning to Base</option>
+				<option value="error">Error</option>
+				<option value="unknown">Unknown</option>
+			</options>
+		</state>
+	</channel-type>
+
+	<channel-type id="signal-strength">
+		<item-type>Number</item-type>
+		<label>Signal Strength</label>
+		<description>RSSI signal strength of the mower (dBm).</description>
+		<state readOnly="true" pattern="%d dBm"/>
+	</channel-type>
+
+	<channel-type id="latitude">
+		<item-type>Number</item-type>
+		<label>Latitude</label>
+		<description>Current GPS latitude of the mower.</description>
+		<state readOnly="true" pattern="%.6f °"/>
+	</channel-type>
+
+	<channel-type id="longitude">
+		<item-type>Number</item-type>
+		<label>Longitude</label>
+		<description>Current GPS longitude of the mower.</description>
+		<state readOnly="true" pattern="%.6f °"/>
+	</channel-type>
+
+	<channel-type id="error-code">
+		<item-type>String</item-type>
+		<label>Error Code</label>
+		<description>Error code reported by the mower, or "none" if there is no error.</description>
+		<state readOnly="true"/>
+	</channel-type>
+
+	<channel-type id="mower-command">
+		<item-type>String</item-type>
+		<label>Command</label>
+		<description>Send a command to the mower.</description>
+		<state>
+			<options>
+				<option value="start">Start Mowing</option>
+				<option value="stop">Stop Mowing</option>
+				<option value="pause">Pause</option>
+				<option value="resume">Resume</option>
+				<option value="dock">Return to Base</option>
+			</options>
+		</state>
+	</channel-type>
+
+</thing:thing-descriptions>
