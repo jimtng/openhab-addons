@@ -79,7 +79,7 @@ public class NavimowBindingConstants {
     public static final String NAVIMOW_SERVLET_ALIAS = "/navimow";
 
     // OAuth2 endpoints and credentials
-    public static final String OAUTH2_AUTHORIZE_URL = "https://navimow-h5-fra.willand.com/smartHome/login";
+    public static final String OAUTH2_AUTHORIZE_URL = "https://navimow-h5-fra.willand.com/smartHome/login?channel=homeassistant";
     public static final String OAUTH2_TOKEN_URL = "https://navimow-fra.ninebot.com/openapi/oauth/getAccessToken";
     public static final String OAUTH2_CLIENT_ID = "homeassistant";
     public static final String OAUTH2_CLIENT_SECRET = "57056e15-722e-42be-bbaa-b0cbfb208a52";

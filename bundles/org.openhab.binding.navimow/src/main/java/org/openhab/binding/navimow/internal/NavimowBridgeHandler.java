@@ -12,7 +12,6 @@
  */
 package org.openhab.binding.navimow.internal;
 
-import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
@@ -46,7 +45,6 @@ import org.openhab.core.auth.client.oauth2.AccessTokenResponse;
 import org.openhab.core.auth.client.oauth2.OAuthClientService;
 import org.openhab.core.auth.client.oauth2.OAuthException;
 import org.openhab.core.auth.client.oauth2.OAuthFactory;
-import org.openhab.core.auth.client.oauth2.OAuthResponseException;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.ThingStatus;
@@ -57,6 +55,7 @@ import org.openhab.core.types.Command;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
@@ -111,7 +110,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
 
         OAuthClientService oAuthClientService = oAuthFactory.createOAuthClientService(thing.getUID().getAsString(),
                 NavimowBindingConstants.OAUTH2_TOKEN_URL, NavimowBindingConstants.OAUTH2_AUTHORIZE_URL,
-                NavimowBindingConstants.OAUTH2_CLIENT_ID, NavimowBindingConstants.OAUTH2_CLIENT_SECRET, null, true);
+                NavimowBindingConstants.OAUTH2_CLIENT_ID, NavimowBindingConstants.OAUTH2_CLIENT_SECRET, null, false);
         this.oAuthService = oAuthClientService;
 
         NavimowApi navimowApi = new NavimowApi(httpClient, config.apiBaseUrl, oAuthClientService);
@@ -191,16 +190,8 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
      * @return true if authorized
      */
     public boolean isAuthorized() {
-        try {
-            OAuthClientService service = oAuthService;
-            if (service == null) {
-                return false;
-            }
-            AccessTokenResponse response = service.getAccessTokenResponse();
-            return response != null && response.getAccessToken() != null;
-        } catch (OAuthException | IOException | OAuthResponseException e) {
-            return false;
-        }
+        NavimowApi navimowApi = api;
+        return navimowApi != null && navimowApi.hasStoredAccessToken();
     }
 
     /**
@@ -235,9 +226,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
             if (service == null) {
                 return "";
             }
-            String url = service.getAuthorizationUrl(redirectUri, null, thing.getUID().getAsString());
-            // Append channel=openhab so the Navimow server knows the source platform
-            return url + (url.contains("?") ? "&" : "?") + "channel=openhab";
+            return service.getAuthorizationUrl(redirectUri, null, thing.getUID().getAsString());
         } catch (OAuthException e) {
             LOGGER.debug("Error building authorization URL: {}", e.getMessage());
             return "";
@@ -258,9 +247,14 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
             if (service == null) {
                 throw new NavimowApiException("OAuth service is not initialized");
             }
-            AccessTokenResponse tokenResponse = exchangeToken(
-                    Map.of("grant_type", "authorization_code", "code", code, "redirect_uri", redirectUri));
-            service.importAccessTokenResponse(tokenResponse);
+            Map<String, String> params = new HashMap<>();
+            params.put("grant_type", "authorization_code");
+            params.put("grantType", "authorization_code");
+            params.put("code", code);
+            params.put("redirect_uri", redirectUri);
+            AccessTokenResponse tokenResponse = exchangeToken(params);
+            service.importAccessTokenResponse(
+                    NavimowApi.prepareTokenForStorage(tokenResponse, tokenResponse.getRefreshToken()));
             LOGGER.debug("OAuth2 authorization succeeded for bridge {}", thing.getUID());
             updateStatus(ThingStatus.UNKNOWN);
             scheduler.execute(this::connectToCloud);
@@ -344,6 +338,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
 
             ContentResponse response = httpClient.newRequest(NavimowBindingConstants.OAUTH2_TOKEN_URL)
                     .method(HttpMethod.POST).header("Content-Type", "application/x-www-form-urlencoded")
+                    .header("requestId", UUID.randomUUID().toString())
                     .content(new StringContentProvider(body.toString())).timeout(30, TimeUnit.SECONDS).send();
 
             if (response.getStatus() != 200) {
@@ -353,6 +348,13 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
 
             String responseBody = response.getContentAsString();
             JsonObject json = JsonParser.parseString(responseBody).getAsJsonObject();
+
+            JsonElement codeEl = json.get("code");
+            if (codeEl != null && codeEl.getAsInt() != 1) {
+                JsonElement descEl = json.get("desc");
+                String desc = descEl != null ? descEl.getAsString() : "unknown error";
+                throw new NavimowApiException("Token exchange rejected: " + desc);
+            }
 
             // Navimow may wrap the token fields in {"code":0,"data":{...}}
             if (json.has("data") && json.get("data").isJsonObject()) {
@@ -366,11 +368,15 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
 
             long expiresIn = json.has("expires_in") ? json.get("expires_in").getAsLong() : 86400L;
             String tokenType = json.has("token_type") ? json.get("token_type").getAsString() : "Bearer";
+            String refreshToken = json.has("refresh_token") ? json.get("refresh_token").getAsString() : null;
 
             AccessTokenResponse tokenResponse = new AccessTokenResponse();
             tokenResponse.setAccessToken(accessToken);
             tokenResponse.setTokenType(tokenType);
             tokenResponse.setExpiresIn(expiresIn);
+            if (refreshToken != null && !refreshToken.isEmpty()) {
+                tokenResponse.setRefreshToken(refreshToken);
+            }
             tokenResponse.setCreatedOn(Instant.now());
             return tokenResponse;
         } catch (ExecutionException | TimeoutException e) {
@@ -441,15 +447,9 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         // This must be done EVERY TIME we connect, not just once, because the token can expire
         String accessToken = null;
         try {
-            OAuthClientService service = oAuthService;
-            if (service != null) {
-                AccessTokenResponse tokenResponse = service.getAccessTokenResponse();
-                if (tokenResponse != null) {
-                    accessToken = tokenResponse.getAccessToken();
-                    LOGGER.debug("OAuth access token refreshed for WebSocket Authorization header");
-                }
-            }
-        } catch (OAuthException | IOException | OAuthResponseException e) {
+            accessToken = navimowApi.getCurrentAccessToken();
+            LOGGER.debug("OAuth access token prepared for MQTT WebSocket Authorization header");
+        } catch (NavimowAuthException e) {
             LOGGER.warn("Could not retrieve access token for MQTT WebSocket header: {}", e.getMessage());
         }
 
@@ -509,16 +509,21 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         // Build HiveMQ client with WebSocket support, custom Authorization header
         // DO NOT use automaticReconnectWithDefaultConfig() because MQTT credentials are time-limited
         // We need to fetch fresh credentials on reconnect, not use stale ones
+        final Mqtt3AsyncClient[] listenerClientRef = new Mqtt3AsyncClient[1];
         var builder = Mqtt3Client.builder().serverHost(resolvedHost).serverPort(resolvedPort).identifier(clientId)
                 .addDisconnectedListener(context -> {
+                    Mqtt3AsyncClient listenerClient = listenerClientRef[0];
+                    if (listenerClient == null || mqttClient != listenerClient) {
+                        LOGGER.debug("MQTT disconnected from stale client: {}", context.getCause().getMessage());
+                        return;
+                    }
                     if (disposed || suppressMqttReconnect || !cloudAuthenticated) {
                         LOGGER.debug("MQTT disconnected: {} (reconnect suppressed)", context.getCause().getMessage());
                         return;
                     }
                     LOGGER.warn("MQTT disconnected: {} (will attempt reconnect with fresh credentials)",
                             context.getCause().getMessage());
-                    // Schedule reconnect with fresh credentials after auth failures
-                    // Wait 10 seconds before reconnecting to avoid rapid reconnect storms
+                    // Schedule reconnect with fresh credentials after auth failures.
                     scheduler.schedule(() -> {
                         if (disposed || !cloudAuthenticated) {
                             LOGGER.debug("Skipping MQTT reconnect because bridge is disposed or unauthenticated");
@@ -563,6 +568,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         }
 
         Mqtt3AsyncClient client = builder.buildAsync();
+        listenerClientRef[0] = client;
         this.mqttClient = client;
 
         // Set global PUBLISH handler — all incoming MQTT messages arrive here

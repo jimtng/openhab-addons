@@ -41,18 +41,17 @@ This binding uses OAuth2 to authenticate with the Navimow cloud.
 
 ### Token Expiry
 
-Navimow access tokens are valid for approximately 1–2 days and cannot be refreshed automatically.
-When the token expires the bridge goes **OFFLINE** with the message _"Authentication failed"_.
-Revisit `http://<openhab-host>:8080/navimow` and click **Re-authorize** to obtain a new token.
+Navimow access tokens are typically short-lived (often around 1–2 days).
+
+- If Navimow provides a `refresh_token` during authorization, the binding will try to refresh the access token automatically before expiry and retry once after an authentication rejection.
+- If no `refresh_token` is available, or the refresh token is no longer accepted by Navimow, the bridge goes **OFFLINE** with _"Authentication failed"_ and you must reauthorize via `http://<openhab-host>:8080/navimow`.
 
 ## Thing Configuration
 
 ### Bridge (`navimow:bridge`)
 
-| Parameter         | Type    | Required | Default                           | Description                                                     |
-|-------------------|---------|----------|-----------------------------------|-----------------------------------------------------------------|
-| `pollingInterval` | Integer | No       | `3600`                            | HTTP polling fallback interval in seconds. Set to 0 to disable. |
-| `apiBaseUrl`      | String  | No       | `https://navimow-fra.ninebot.com` | Override the Navimow API base URL (see Regional Servers below). |
+- `pollingInterval` (Integer, optional, default `3600`): HTTP polling fallback interval in seconds. Set to 0 to disable.
+- `apiBaseUrl` (String, optional, default `https://navimow-fra.ninebot.com`): Override the Navimow API base URL (see Regional Servers below).
 
 #### Regional Servers
 
@@ -84,6 +83,7 @@ The device ID is an opaque string assigned by the Navimow cloud (e.g. `NB1234567
 It is **not** the serial number printed on the mower, though they may look similar.
 
 ## Channels
+
 ### Mower Channels
 
 | Channel ID             | Type                   | Read/Write | Description                                                                                                       |
@@ -106,9 +106,9 @@ It is **not** the serial number printed on the mower, though they may look simil
 
 #### Telemetry details
 
-- The `/location` telemetry payload is a JSON array with mixed entry types. The binding parses the array and extracts entries by their `type` field:
-   - `type: 1` — posture entries (populates `posture-theta`, `posture-x`, `posture-y`).
-   - `type: 2` — mowing metrics (populates `current-mow-progress`, `mowing-percentage`, `current-mow-boundary`, `mowing-week-area`, `subtotal-area`, `mow-start-type`).
+- The `/location` telemetry payload is a JSON array with mixed entry types.
+- The binding parses the array and extracts entries with `type: 1` as posture entries (populates `posture-theta`, `posture-x`, `posture-y`).
+- The binding parses the array and extracts entries with `type: 2` as mowing metrics (populates `current-mow-progress`, `mowing-percentage`, `current-mow-boundary`, `mowing-week-area`, `subtotal-area`, `mow-start-type`).
 - `current-mow-progress` is calculated by dividing the raw integer value from telemetry by `100.0` to produce a percentage (e.g. raw `8534` → `85.34%`).
 - Area values reported by the telemetry are raw square metres; the binding publishes them as `Number:Area` (m²).
 - `posture-theta` is published as an `Angle` QuantityType in radians.
@@ -119,7 +119,6 @@ It is **not** the serial number printed on the mower, though they may look simil
 
 - The bridge merges incoming partial telemetry updates with the last-known state before forwarding updates to mower handlers to avoid transient `UNDEF` regressions.
 - To improve broker compatibility, the bridge subscribes to per-device MQTT topics only when a mower thing registers a listener (no wildcard startup subscribe fallback).
-
 
 ## Full Example
 
