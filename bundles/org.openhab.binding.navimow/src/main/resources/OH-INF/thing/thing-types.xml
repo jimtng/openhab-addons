@@ -10,12 +10,6 @@
 		<description>Connects to the Navimow cloud service and manages MQTT real-time updates.</description>
 
 		<config-description>
-			<parameter name="accessToken" type="text" required="true">
-				<context>password</context>
-				<label>Access Token</label>
-				<description>OAuth2 access token for the Navimow cloud. Obtain this from your Navimow connected app or Home
-					Assistant integration.</description>
-			</parameter>
 			<parameter name="pollingInterval" type="integer" unit="s" min="60">
 				<label>Polling Interval</label>
 				<description>Interval in seconds for HTTP fallback polling. Set to 0 to disable polling (MQTT only).</description>
@@ -44,9 +38,17 @@
 			<channel id="status" typeId="mower-status"/>
 			<channel id="battery-level" typeId="system.battery-level"/>
 			<channel id="signal-strength" typeId="signal-strength"/>
-			<channel id="latitude" typeId="latitude"/>
-			<channel id="longitude" typeId="longitude"/>
+			<channel id="location" typeId="mower-location"/>
 			<channel id="error-code" typeId="error-code"/>
+			<channel id="current-mow-boundary" typeId="current-mow-boundary"/>
+			<channel id="current-mow-progress" typeId="current-mow-progress"/>
+			<channel id="mowing-percentage" typeId="mowing-percentage"/>
+			<channel id="mowing-week-area" typeId="mowing-week-area"/>
+			<channel id="subtotal-area" typeId="subtotal-area"/>
+			<channel id="mow-start-type" typeId="mow-start-type"/>
+			<channel id="posture-theta" typeId="posture-theta"/>
+			<channel id="posture-x" typeId="posture-x"/>
+			<channel id="posture-y" typeId="posture-y"/>
 			<channel id="command" typeId="mower-command"/>
 		</channels>
 
@@ -85,24 +87,80 @@
 		<state readOnly="true" pattern="%d dBm"/>
 	</channel-type>
 
-	<channel-type id="latitude">
-		<item-type>Number</item-type>
-		<label>Latitude</label>
-		<description>Current GPS latitude of the mower.</description>
-		<state readOnly="true" pattern="%.6f °"/>
-	</channel-type>
-
-	<channel-type id="longitude">
-		<item-type>Number</item-type>
-		<label>Longitude</label>
-		<description>Current GPS longitude of the mower.</description>
-		<state readOnly="true" pattern="%.6f °"/>
+	<channel-type id="mower-location">
+		<item-type>Location</item-type>
+		<label>Location</label>
+		<description>Current GPS position of the mower (latitude, longitude).</description>
+		<state readOnly="true"/>
 	</channel-type>
 
 	<channel-type id="error-code">
 		<item-type>String</item-type>
 		<label>Error Code</label>
 		<description>Error code reported by the mower, or "none" if there is no error.</description>
+		<state readOnly="true"/>
+	</channel-type>
+
+	<channel-type id="current-mow-boundary">
+		<item-type>Number</item-type>
+		<label>Current Mow Boundary</label>
+		<description>Boundary identifier reported by the location telemetry stream.</description>
+		<state readOnly="true"/>
+	</channel-type>
+
+	<channel-type id="current-mow-progress">
+		<item-type>Number:Dimensionless</item-type>
+		<label>Current Mow Progress</label>
+		<description>Mowing progress percentage reported by the location telemetry stream (raw value divided by 100).</description>
+		<state readOnly="true" pattern="%.2f %%"/>
+	</channel-type>
+
+	<channel-type id="mowing-percentage">
+		<item-type>Number:Dimensionless</item-type>
+		<label>Mowing Percentage</label>
+		<description>Current mowing completion percentage from the location telemetry stream.</description>
+		<state readOnly="true" pattern="%d %%"/>
+	</channel-type>
+
+	<channel-type id="mowing-week-area">
+		<item-type>Number:Area</item-type>
+		<label>Mowing Week Area</label>
+		<description>Total area reported as mowed this week by the location telemetry stream (raw value in square meters).</description>
+		<state readOnly="true" pattern="%.2f %unit%"/>
+	</channel-type>
+
+	<channel-type id="subtotal-area">
+		<item-type>Number:Area</item-type>
+		<label>Subtotal Area</label>
+		<description>Current activity subtotal area reported by the location telemetry stream (raw value in square meters).</description>
+		<state readOnly="true" pattern="%.2f %unit%"/>
+	</channel-type>
+
+	<channel-type id="mow-start-type">
+		<item-type>String</item-type>
+		<label>Mow Start Type</label>
+		<description>Mowing start type indicator from the location telemetry stream (format to be determined).</description>
+		<state readOnly="true"/>
+	</channel-type>
+
+	<channel-type id="posture-theta">
+		<item-type>Number:Angle</item-type>
+		<label>Posture Theta</label>
+		<description>Heading angle reported by the location telemetry stream.</description>
+		<state readOnly="true" pattern="%.3f %unit%"/>
+	</channel-type>
+
+	<channel-type id="posture-x">
+		<item-type>Number</item-type>
+		<label>Posture X</label>
+		<description>Posture X coordinate inside the current zone reported by the location telemetry stream.</description>
+		<state readOnly="true"/>
+	</channel-type>
+
+	<channel-type id="posture-y">
+		<item-type>Number</item-type>
+		<label>Posture Y</label>
+		<description>Posture Y coordinate inside the current zone reported by the location telemetry stream.</description>
 		<state readOnly="true"/>
 	</channel-type>
 

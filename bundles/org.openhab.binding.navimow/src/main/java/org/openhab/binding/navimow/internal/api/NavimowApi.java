@@ -12,6 +12,7 @@
  */
 package org.openhab.binding.navimow.internal.api;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,6 +33,10 @@ import org.eclipse.jetty.http.HttpStatus;
 import org.openhab.binding.navimow.internal.dto.NavimowDevice;
 import org.openhab.binding.navimow.internal.dto.NavimowMowerState;
 import org.openhab.binding.navimow.internal.dto.NavimowMqttInfo;
+import org.openhab.core.auth.client.oauth2.AccessTokenResponse;
+import org.openhab.core.auth.client.oauth2.OAuthClientService;
+import org.openhab.core.auth.client.oauth2.OAuthException;
+import org.openhab.core.auth.client.oauth2.OAuthResponseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -77,29 +82,40 @@ public class NavimowApi {
     private final HttpClient httpClient;
     private final Gson gson;
     private final String baseUrl;
-    private String accessToken;
+    private final OAuthClientService oAuthService;
 
     /**
      * Creates a new Navimow API client.
      *
      * @param httpClient the Jetty HTTP client
      * @param baseUrl the Navimow API base URL
-     * @param accessToken the OAuth2 Bearer access token
+     * @param oAuthService the OAuth2 client service providing access tokens
      */
-    public NavimowApi(HttpClient httpClient, String baseUrl, String accessToken) {
+    public NavimowApi(HttpClient httpClient, String baseUrl, OAuthClientService oAuthService) {
         this.httpClient = httpClient;
         this.gson = new Gson();
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        this.accessToken = accessToken;
+        this.oAuthService = oAuthService;
     }
 
     /**
-     * Updates the access token (e.g. after refresh).
+     * Retrieves the current access token from the OAuth2 service.
      *
-     * @param accessToken the new token
+     * @return the access token string
+     * @throws NavimowAuthException if no valid token is available
      */
-    public void setAccessToken(String accessToken) {
-        this.accessToken = accessToken;
+    private String getAccessToken() throws NavimowAuthException {
+        try {
+            AccessTokenResponse response = oAuthService.getAccessTokenResponse();
+            String token = response != null ? response.getAccessToken() : null;
+            if (token == null) {
+                throw new NavimowAuthException(
+                        "Not authorized. Please visit http://openhab:8080/navimow to authorize.");
+            }
+            return token;
+        } catch (OAuthException | IOException | OAuthResponseException e) {
+            throw new NavimowAuthException("Failed to retrieve access token: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -139,6 +155,7 @@ public class NavimowApi {
         requestBody.add("devices", deviceArray);
 
         JsonObject data = postRequest("/openapi/smarthome/getVehicleStatus", requestBody);
+        LOGGER.debug("HTTP getVehicleStatus response: {}", data);
         JsonObject payload = getPayload(data);
         JsonArray devicesArray = payload.getAsJsonArray("devices");
 
@@ -156,7 +173,12 @@ public class NavimowApi {
      */
     public NavimowMqttInfo getMqttUserInfo() throws NavimowApiException {
         JsonObject data = getRequest("/openapi/mqtt/userInfo/get/v2");
+        LOGGER.debug("MQTT userInfo response: {}", data);
         NavimowMqttInfo mqttInfo = gson.fromJson(data, NavimowMqttInfo.class);
+        if (mqttInfo != null) {
+            LOGGER.debug("Parsed MQTT info: host={} url={} user={} hasPassword={}", mqttInfo.mqttHost, mqttInfo.mqttUrl,
+                    mqttInfo.userName, mqttInfo.pwdInfo != null);
+        }
         return mqttInfo != null ? mqttInfo : new NavimowMqttInfo();
     }
 
@@ -273,33 +295,154 @@ public class NavimowApi {
      * @return the parsed state
      */
     public NavimowMowerState parseMqttStatePayload(JsonObject json, String defaultDeviceId) {
-        NavimowMowerState state = new NavimowMowerState();
-        state.deviceId = getStringOrDefault(json, "device_id", defaultDeviceId);
+        LOGGER.debug("Parsing MQTT state payload: {}", json);
+        JsonObject source = json;
+        JsonElement paramsEl = json.get("params");
+        if (paramsEl != null && paramsEl.isJsonObject()) {
+            source = paramsEl.getAsJsonObject();
+        } else {
+            JsonElement payloadEl = json.get("payload");
+            if (payloadEl != null && payloadEl.isJsonObject()) {
+                source = payloadEl.getAsJsonObject();
+            }
+        }
 
-        String rawState = getStringOrNull(json, "state");
+        NavimowMowerState state = new NavimowMowerState();
+        state.deviceId = getStringOrDefault(source, "device_id", defaultDeviceId);
+
+        String rawState = getStringOrNull(source, "state");
         if (rawState == null) {
-            rawState = getStringOrNull(json, "status");
+            rawState = getStringOrNull(source, "status");
         }
         if (rawState == null) {
-            rawState = getStringOrNull(json, "vehicleState");
+            rawState = getStringOrNull(source, "vehicleState");
         }
         state.state = normalizeState(rawState);
 
-        state.battery = extractBattery(json);
-        state.signalStrength = getIntOrNull(json, "signal_strength");
+        state.battery = extractBattery(source);
+        state.signalStrength = getIntOrNull(source, "signal_strength");
+        if (state.signalStrength == null) {
+            state.signalStrength = getIntOrNull(source, "signalStrength");
+        }
+        if (state.signalStrength == null) {
+            state.signalStrength = getIntOrNull(source, "rssi");
+        }
 
-        JsonElement positionEl = json.get("position");
+        JsonElement positionEl = source.get("position");
         if (positionEl != null && positionEl.isJsonObject()) {
             JsonObject pos = positionEl.getAsJsonObject();
             state.latitude = getDoubleOrNull(pos, "lat");
+            if (state.latitude == null) {
+                state.latitude = getDoubleOrNull(pos, "latitude");
+            }
             state.longitude = getDoubleOrNull(pos, "lng");
+            if (state.longitude == null) {
+                state.longitude = getDoubleOrNull(pos, "longitude");
+            }
+        }
+        if (state.latitude == null) {
+            state.latitude = getDoubleOrNull(source, "lat");
+        }
+        if (state.latitude == null) {
+            state.latitude = getDoubleOrNull(source, "latitude");
+        }
+        if (state.longitude == null) {
+            state.longitude = getDoubleOrNull(source, "lng");
+        }
+        if (state.longitude == null) {
+            state.longitude = getDoubleOrNull(source, "longitude");
         }
 
-        JsonElement errorEl = json.get("error");
+        JsonElement errorEl = source.get("error");
         if (errorEl != null && errorEl.isJsonObject()) {
             JsonObject error = errorEl.getAsJsonObject();
             state.errorCode = getStringOrNull(error, "code");
             state.errorMessage = getStringOrNull(error, "message");
+        } else {
+            state.errorCode = getStringOrNull(source, "error_code");
+            state.errorMessage = getStringOrNull(source, "error_message");
+        }
+
+        return state;
+    }
+
+    /**
+     * Parses a MQTT location payload array into a {@link NavimowMowerState}.
+     *
+     * @param jsonArray the raw JSON array payload
+     * @param defaultDeviceId fallback device ID if not present in payload
+     * @return the parsed state
+     */
+    public NavimowMowerState parseMqttLocationPayload(JsonArray jsonArray, String defaultDeviceId) {
+        LOGGER.debug("Parsing MQTT location payload: {}", jsonArray);
+
+        NavimowMowerState state = new NavimowMowerState();
+        state.deviceId = defaultDeviceId;
+
+        for (JsonElement element : jsonArray) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+
+            JsonObject source = element.getAsJsonObject();
+            JsonObject telemetrySource = source;
+            JsonElement paramsEl = source.get("params");
+            if (paramsEl != null && paramsEl.isJsonObject()) {
+                telemetrySource = paramsEl.getAsJsonObject();
+            } else {
+                JsonElement payloadEl = source.get("payload");
+                if (payloadEl != null && payloadEl.isJsonObject()) {
+                    telemetrySource = payloadEl.getAsJsonObject();
+                }
+            }
+
+            state.deviceId = getStringOrDefault(source, "device_id", state.deviceId);
+            state.deviceId = getStringOrDefault(telemetrySource, "device_id", state.deviceId);
+
+            Integer currentMowBoundary = getIntOrNull(telemetrySource, "currentMowBoundary");
+            if (currentMowBoundary != null) {
+                state.currentMowBoundary = currentMowBoundary;
+            }
+
+            Integer currentMowProgressRaw = getIntOrNull(telemetrySource, "currentMowProgress");
+            if (currentMowProgressRaw != null) {
+                state.currentMowProgress = currentMowProgressRaw / 100.0;
+            }
+
+            Integer mowingPercentage = getIntOrNull(telemetrySource, "mowingPercentage");
+            if (mowingPercentage != null) {
+                state.mowingPercentage = mowingPercentage;
+            }
+
+            Double mowingWeekArea = getDoubleOrNull(telemetrySource, "mowingWeekArea");
+            if (mowingWeekArea != null) {
+                state.mowingWeekArea = mowingWeekArea;
+            }
+
+            Double subtotalArea = getDoubleOrNull(telemetrySource, "subtotalArea");
+            if (subtotalArea != null) {
+                state.subtotalArea = subtotalArea;
+            }
+
+            String mowStartType = getStringOrNull(telemetrySource, "mowStartType");
+            if (mowStartType != null) {
+                state.mowStartType = mowStartType;
+            }
+
+            Double postureTheta = getDoubleOrNull(telemetrySource, "postureTheta");
+            if (postureTheta != null) {
+                state.postureTheta = postureTheta;
+            }
+
+            Double postureX = getDoubleOrNull(telemetrySource, "postureX");
+            if (postureX != null) {
+                state.postureX = postureX;
+            }
+
+            Double postureY = getDoubleOrNull(telemetrySource, "postureY");
+            if (postureY != null) {
+                state.postureY = postureY;
+            }
         }
 
         return state;
@@ -310,8 +453,9 @@ public class NavimowApi {
     private JsonObject getRequest(String endpoint) throws NavimowApiException {
         try {
             String url = baseUrl + endpoint;
+            String token = getAccessToken();
             Request request = httpClient.newRequest(url).method(HttpMethod.GET)
-                    .header("Authorization", "Bearer " + accessToken).header("requestId", UUID.randomUUID().toString())
+                    .header("Authorization", "Bearer " + token).header("requestId", UUID.randomUUID().toString())
                     .timeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
             ContentResponse response = request.send();
@@ -327,9 +471,10 @@ public class NavimowApi {
     private JsonObject postRequest(String endpoint, JsonObject body) throws NavimowApiException {
         try {
             String url = baseUrl + endpoint;
+            String token = getAccessToken();
             String jsonBody = gson.toJson(body);
             Request request = httpClient.newRequest(url).method(HttpMethod.POST)
-                    .header("Authorization", "Bearer " + accessToken).header("requestId", UUID.randomUUID().toString())
+                    .header("Authorization", "Bearer " + token).header("requestId", UUID.randomUUID().toString())
                     .header("Content-Type", "application/json").content(new StringContentProvider(jsonBody))
                     .timeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
@@ -359,8 +504,8 @@ public class NavimowApi {
         if (codeEl != null && codeEl.getAsInt() != API_SUCCESS_CODE) {
             JsonElement descEl = json.get("desc");
             String desc = descEl != null ? descEl.getAsString() : "unknown error";
-            // code 400003 often means auth failure
-            if (codeEl.getAsInt() == 400003 || codeEl.getAsInt() == 401) {
+            // codes 400003/4005/401 indicate auth/session failure
+            if (codeEl.getAsInt() == 400003 || codeEl.getAsInt() == 4005 || codeEl.getAsInt() == 401) {
                 throw new NavimowAuthException("API authentication error: " + desc);
             }
             throw new NavimowApiException("API error " + codeEl.getAsInt() + ": " + desc);
@@ -399,6 +544,7 @@ public class NavimowApi {
     }
 
     private NavimowMowerState parseDeviceStatus(JsonObject json, String deviceId) {
+        LOGGER.debug("Parsing HTTP device status payload: {}", json);
         NavimowMowerState state = new NavimowMowerState();
         state.deviceId = getStringOrDefault(json, "id", deviceId);
 
@@ -406,9 +552,43 @@ public class NavimowApi {
         if (rawState == null) {
             rawState = getStringOrNull(json, "status");
         }
+        if (rawState == null) {
+            rawState = getStringOrNull(json, "state");
+        }
         state.state = normalizeState(rawState);
         state.battery = extractBattery(json);
         state.signalStrength = getIntOrNull(json, "signal_strength");
+        if (state.signalStrength == null) {
+            state.signalStrength = getIntOrNull(json, "signalStrength");
+        }
+        if (state.signalStrength == null) {
+            state.signalStrength = getIntOrNull(json, "rssi");
+        }
+
+        JsonElement positionEl = json.get("position");
+        if (positionEl != null && positionEl.isJsonObject()) {
+            JsonObject pos = positionEl.getAsJsonObject();
+            state.latitude = getDoubleOrNull(pos, "lat");
+            if (state.latitude == null) {
+                state.latitude = getDoubleOrNull(pos, "latitude");
+            }
+            state.longitude = getDoubleOrNull(pos, "lng");
+            if (state.longitude == null) {
+                state.longitude = getDoubleOrNull(pos, "longitude");
+            }
+        }
+        if (state.latitude == null) {
+            state.latitude = getDoubleOrNull(json, "lat");
+        }
+        if (state.latitude == null) {
+            state.latitude = getDoubleOrNull(json, "latitude");
+        }
+        if (state.longitude == null) {
+            state.longitude = getDoubleOrNull(json, "lng");
+        }
+        if (state.longitude == null) {
+            state.longitude = getDoubleOrNull(json, "longitude");
+        }
 
         String errorCodeStr = getStringOrNull(json, "error_code");
         if (errorCodeStr != null && !"none".equalsIgnoreCase(errorCodeStr)) {

@@ -27,4 +27,8 @@ public class NavimowAuthException extends NavimowApiException {
     public NavimowAuthException(String message) {
         super(message);
     }
+
+    public NavimowAuthException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }

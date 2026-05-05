@@ -14,6 +14,8 @@ package org.openhab.binding.navimow.internal;
 
 import static org.openhab.binding.navimow.internal.NavimowBindingConstants.*;
 
+import javax.measure.quantity.Angle;
+import javax.measure.quantity.Area;
 import javax.measure.quantity.Dimensionless;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -22,8 +24,10 @@ import org.openhab.binding.navimow.internal.api.NavimowApi;
 import org.openhab.binding.navimow.internal.api.NavimowApiException;
 import org.openhab.binding.navimow.internal.dto.NavimowMowerState;
 import org.openhab.core.library.types.DecimalType;
+import org.openhab.core.library.types.PointType;
 import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.types.StringType;
+import org.openhab.core.library.unit.SIUnits;
 import org.openhab.core.library.unit.Units;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
@@ -34,7 +38,6 @@ import org.openhab.core.thing.binding.BaseThingHandler;
 import org.openhab.core.thing.binding.BridgeHandler;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
-import org.openhab.core.types.UnDefType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -143,6 +146,8 @@ public class NavimowHandler extends BaseThingHandler {
                     return;
             }
             logger.debug("Sent command '{}' to device {}", commandStr, deviceId);
+            // Schedule a status refresh 2 seconds after the command so the UI reflects the new state promptly
+            scheduler.schedule(this::refreshFromBridge, 2, java.util.concurrent.TimeUnit.SECONDS);
         } catch (NavimowApiException e) {
             logger.warn("Failed to send command '{}' to device {}: {}", commandStr, deviceId, e.getMessage());
         }
@@ -161,40 +166,90 @@ public class NavimowHandler extends BaseThingHandler {
 
     private void onMowerStateUpdate(NavimowMowerState state) {
         updateStatus(ThingStatus.ONLINE);
-        updateState(CHANNEL_STATUS, new StringType(state.state));
+        if (state.state != null && !state.state.isBlank()) {
+            updateState(CHANNEL_STATUS, new StringType(state.state));
+        } else {
+            logger.debug("Skipping status update for {} because state is blank/null (payload: state={})", deviceId,
+                    state.state);
+        }
 
         Integer battery = state.battery;
         if (battery != null) {
             updateState(CHANNEL_BATTERY, new QuantityType<Dimensionless>(battery, Units.PERCENT));
         } else {
-            updateState(CHANNEL_BATTERY, UnDefType.UNDEF);
+            logger.debug("Skipping battery update for {} because payload has no battery (payload: battery={})",
+                    deviceId, battery);
         }
 
         Integer signalStrength = state.signalStrength;
         if (signalStrength != null) {
             updateState(CHANNEL_SIGNAL_STRENGTH, new DecimalType(signalStrength));
         } else {
-            updateState(CHANNEL_SIGNAL_STRENGTH, UnDefType.UNDEF);
+            logger.debug(
+                    "Skipping signal update for {} because payload has no signal (payload: signalStrength={} from payload object)",
+                    deviceId, state.signalStrength);
         }
 
         Double latitude = state.latitude;
-        if (latitude != null) {
-            updateState(CHANNEL_LATITUDE, new DecimalType(latitude));
-        } else {
-            updateState(CHANNEL_LATITUDE, UnDefType.UNDEF);
-        }
-
         Double longitude = state.longitude;
-        if (longitude != null) {
-            updateState(CHANNEL_LONGITUDE, new DecimalType(longitude));
+        if (latitude != null && longitude != null) {
+            updateState(CHANNEL_LOCATION, new PointType(new DecimalType(latitude), new DecimalType(longitude)));
         } else {
-            updateState(CHANNEL_LONGITUDE, UnDefType.UNDEF);
+            logger.debug(
+                    "Skipping location update for {} because payload has no complete coordinates (payload: lat={} lon={})",
+                    deviceId, state.latitude, state.longitude);
         }
 
         if (state.errorCode != null) {
             updateState(CHANNEL_ERROR_CODE, new StringType(state.errorCode));
         } else {
             updateState(CHANNEL_ERROR_CODE, new StringType("none"));
+        }
+
+        Integer currentMowBoundary = state.currentMowBoundary;
+        if (currentMowBoundary != null) {
+            updateState(CHANNEL_CURRENT_MOW_BOUNDARY, new DecimalType(currentMowBoundary));
+        }
+
+        Double currentMowProgress = state.currentMowProgress;
+        if (currentMowProgress != null) {
+            updateState(CHANNEL_CURRENT_MOW_PROGRESS,
+                    new QuantityType<Dimensionless>(currentMowProgress, Units.PERCENT));
+        }
+
+        Integer mowingPercentage = state.mowingPercentage;
+        if (mowingPercentage != null) {
+            updateState(CHANNEL_MOWING_PERCENTAGE, new QuantityType<Dimensionless>(mowingPercentage, Units.PERCENT));
+        }
+
+        Double mowingWeekArea = state.mowingWeekArea;
+        if (mowingWeekArea != null) {
+            updateState(CHANNEL_MOWING_WEEK_AREA, new QuantityType<Area>(mowingWeekArea, SIUnits.SQUARE_METRE));
+        }
+
+        Double subtotalArea = state.subtotalArea;
+        if (subtotalArea != null) {
+            updateState(CHANNEL_SUBTOTAL_AREA, new QuantityType<Area>(subtotalArea, SIUnits.SQUARE_METRE));
+        }
+
+        String mowStartType = state.mowStartType;
+        if (mowStartType != null) {
+            updateState(CHANNEL_MOW_START_TYPE, new StringType(mowStartType));
+        }
+
+        Double postureTheta = state.postureTheta;
+        if (postureTheta != null) {
+            updateState(CHANNEL_POSTURE_THETA, new QuantityType<Angle>(postureTheta, Units.RADIAN));
+        }
+
+        Double postureX = state.postureX;
+        if (postureX != null) {
+            updateState(CHANNEL_POSTURE_X, new DecimalType(postureX));
+        }
+
+        Double postureY = state.postureY;
+        if (postureY != null) {
+            updateState(CHANNEL_POSTURE_Y, new DecimalType(postureY));
         }
     }
 

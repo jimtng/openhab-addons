@@ -22,9 +22,6 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 @NonNullByDefault
 public class NavimowBridgeConfiguration {
 
-    /** OAuth2 access token obtained from the Navimow account. */
-    public String accessToken = "";
-
     /**
      * Interval in seconds for HTTP polling fallback when MQTT data is stale.
      * Default: 3600 (1 hour).

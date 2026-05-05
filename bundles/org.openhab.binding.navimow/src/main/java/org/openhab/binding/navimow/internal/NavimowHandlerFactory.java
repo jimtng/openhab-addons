@@ -19,6 +19,7 @@ import java.util.Set;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jetty.client.HttpClient;
+import org.openhab.core.auth.client.oauth2.OAuthFactory;
 import org.openhab.core.io.net.http.HttpClientFactory;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Thing;
@@ -42,10 +43,15 @@ public class NavimowHandlerFactory extends BaseThingHandlerFactory {
     private static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Set.of(THING_TYPE_BRIDGE, THING_TYPE_MOWER);
 
     private final HttpClient httpClient;
+    private final OAuthFactory oAuthFactory;
+    private final NavimowAuthService authService;
 
     @Activate
-    public NavimowHandlerFactory(@Reference HttpClientFactory httpClientFactory) {
+    public NavimowHandlerFactory(@Reference HttpClientFactory httpClientFactory, @Reference OAuthFactory oAuthFactory,
+            @Reference NavimowAuthService authService) {
         this.httpClient = httpClientFactory.getCommonHttpClient();
+        this.oAuthFactory = oAuthFactory;
+        this.authService = authService;
     }
 
     @Override
@@ -58,7 +64,9 @@ public class NavimowHandlerFactory extends BaseThingHandlerFactory {
         ThingTypeUID thingTypeUID = thing.getThingTypeUID();
 
         if (THING_TYPE_BRIDGE.equals(thingTypeUID)) {
-            return new NavimowBridgeHandler((Bridge) thing, httpClient);
+            NavimowBridgeHandler handler = new NavimowBridgeHandler((Bridge) thing, oAuthFactory, httpClient);
+            authService.addBridgeHandler(handler);
+            return handler;
         }
 
         if (THING_TYPE_MOWER.equals(thingTypeUID)) {
@@ -66,5 +74,12 @@ public class NavimowHandlerFactory extends BaseThingHandlerFactory {
         }
 
         return null;
+    }
+
+    @Override
+    protected synchronized void removeHandler(ThingHandler thingHandler) {
+        if (thingHandler instanceof NavimowBridgeHandler bridgeHandler) {
+            authService.removeBridgeHandler(bridgeHandler);
+        }
     }
 }

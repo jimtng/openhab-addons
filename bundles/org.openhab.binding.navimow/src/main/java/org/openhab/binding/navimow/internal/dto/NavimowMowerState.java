@@ -48,4 +48,31 @@ public class NavimowMowerState {
 
     /** Human-readable error message, or null if no error. */
     public @Nullable String errorMessage;
+
+    /** Current mowing boundary identifier from location telemetry, or null if not reported. */
+    public @Nullable Integer currentMowBoundary;
+
+    /** Current mowing progress percentage from location telemetry, or null if not reported. */
+    public @Nullable Double currentMowProgress;
+
+    /** Current mowing completion percentage, or null if not reported. */
+    public @Nullable Integer mowingPercentage;
+
+    /** Reported cumulative mowing area for the week, or null if not reported. */
+    public @Nullable Double mowingWeekArea;
+
+    /** Reported subtotal area for the current activity, or null if not reported. */
+    public @Nullable Double subtotalArea;
+
+    /** Mowing start type indicator from location telemetry, or null if not reported. */
+    public @Nullable String mowStartType;
+
+    /** Posture heading angle from location telemetry, or null if not reported. */
+    public @Nullable Double postureTheta;
+
+    /** Posture X coordinate inside the current zone from location telemetry, or null if not reported. */
+    public @Nullable Double postureX;
+
+    /** Posture Y coordinate inside the current zone from location telemetry, or null if not reported. */
+    public @Nullable Double postureY;
 }
