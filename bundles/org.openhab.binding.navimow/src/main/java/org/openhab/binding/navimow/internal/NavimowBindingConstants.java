@@ -71,9 +71,6 @@ public class NavimowBindingConstants {
     // Property keys
     public static final String PROPERTY_DEVICE_ID = "deviceId";
     public static final String PROPERTY_DEVICE_NAME = "deviceName";
-    public static final String PROPERTY_MODEL = "model";
-    public static final String PROPERTY_FIRMWARE_VERSION = "firmwareVersion";
-    public static final String PROPERTY_SERIAL_NUMBER = "serialNumber";
 
     // OAuth2 servlet
     public static final String NAVIMOW_SERVLET_ALIAS = "/navimow";

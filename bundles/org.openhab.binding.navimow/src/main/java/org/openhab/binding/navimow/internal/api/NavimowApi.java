@@ -127,7 +127,7 @@ public class NavimowApi {
             String accessToken = response != null ? response.getAccessToken() : null;
             if (response == null || accessToken == null) {
                 throw new NavimowAuthException(
-                        "Not authorized. Please visit http://openhab:8080/navimow to authorize.");
+                        "Not authorized. Please visit http(s)://[YOUROPENHAB]:[YOURPORT]/navimow to authorize.");
             }
 
             String existingRefreshToken = extractStoredRefreshToken(response);
@@ -740,11 +740,12 @@ public class NavimowApi {
     }
 
     private NavimowDevice parseDevice(JsonObject json) {
+        LOGGER.debug("Parsing device JSON: {}", json);
         NavimowDevice device = new NavimowDevice();
         device.id = getStringOrDefault(json, "id", "");
         device.name = getStringOrDefault(json, "name", "");
         device.model = getStringOrDefault(json, "model", "");
-        device.firmwareVersion = getStringOrDefault(json, "firmware_version", "");
+        device.firmwareVersion = getStringOrDefault(json, "firmware", "");
         device.serialNumber = getStringOrDefault(json, "serial_number", "");
         device.macAddress = getStringOrNull(json, "mac_address");
         device.productKey = getStringOrNull(json, "productKey");

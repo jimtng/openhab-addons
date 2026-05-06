@@ -6,7 +6,7 @@
 	<type>binding</type>
 	<name>Navimow Binding</name>
 	<description>Integrates Segway Navimow robotic lawn mowers via the Navimow cloud service. Supports real-time status
-		updates via MQTT and control commands (start, stop, pause, resume, dock).</description>
+		updates and control commands.</description>
 	<connection>cloud</connection>
 
 </addon:addon>

@@ -24,6 +24,7 @@ import org.openhab.binding.navimow.internal.api.NavimowApiException;
 import org.openhab.binding.navimow.internal.dto.NavimowDevice;
 import org.openhab.core.config.discovery.AbstractThingHandlerDiscoveryService;
 import org.openhab.core.config.discovery.DiscoveryResultBuilder;
+import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingUID;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.ServiceScope;
@@ -83,13 +84,13 @@ public class NavimowDiscoveryService extends AbstractThingHandlerDiscoveryServic
             properties.put(NavimowBindingConstants.PROPERTY_DEVICE_NAME, device.name);
         }
         if (!device.model.isBlank()) {
-            properties.put(NavimowBindingConstants.PROPERTY_MODEL, device.model);
+            properties.put(Thing.PROPERTY_MODEL_ID, device.model);
         }
         if (!device.serialNumber.isBlank()) {
-            properties.put(NavimowBindingConstants.PROPERTY_SERIAL_NUMBER, device.serialNumber);
+            properties.put(Thing.PROPERTY_SERIAL_NUMBER, device.serialNumber);
         }
         if (!device.firmwareVersion.isBlank()) {
-            properties.put(NavimowBindingConstants.PROPERTY_FIRMWARE_VERSION, device.firmwareVersion);
+            properties.put(Thing.PROPERTY_FIRMWARE_VERSION, device.firmwareVersion);
         }
 
         String label = device.name.isBlank() ? "Navimow Mower (" + device.id + ")" : device.name;

@@ -118,6 +118,8 @@ public class NavimowAuthServlet extends HttpServlet {
                 boolean authorized = handler.isAuthorized();
                 sb.append("<div class=\"bridge ").append(authorized ? "authorized" : "not-authorized").append("\">\n");
                 sb.append("<h2>").append(escapeHtml(handler.getLabel())).append("</h2>\n");
+                sb.append("<p>Thing UID: <code>").append(escapeHtml(handler.getThing().getUID().toString()))
+                        .append("</code></p>\n");
                 sb.append("<p>Status: <strong>").append(authorized ? "Authorized" : "Not authorized")
                         .append("</strong></p>\n");
                 String authorizeUrl = handler.formatAuthorizationUrl(servletBaseURL);

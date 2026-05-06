@@ -34,23 +34,29 @@
 		<label>Navimow Mower</label>
 		<description>A Segway Navimow robotic lawn mower.</description>
 
+		<category>LawnMower</category>
+
+		<semantic-equipment-tag>LawnMower</semantic-equipment-tag>
+
 		<channels>
 			<channel id="status" typeId="mower-status"/>
-			<channel id="battery-level" typeId="system.battery-level"/>
-			<channel id="signal-strength" typeId="signal-strength"/>
-			<channel id="location" typeId="mower-location"/>
-			<channel id="error-code" typeId="error-code"/>
+			<channel id="command" typeId="mower-command"/>
+			<channel id="battery-level" typeId="battery-level"/>
+			<channel id="mow-start-type" typeId="mow-start-type"/>
 			<channel id="current-mow-boundary" typeId="current-mow-boundary"/>
 			<channel id="current-mow-progress" typeId="current-mow-progress"/>
 			<channel id="mowing-percentage" typeId="mowing-percentage"/>
-			<channel id="mowing-week-area" typeId="mowing-week-area"/>
 			<channel id="subtotal-area" typeId="subtotal-area"/>
-			<channel id="mow-start-type" typeId="mow-start-type"/>
+			<channel id="mowing-week-area" typeId="mowing-week-area"/>
 			<channel id="posture-theta" typeId="posture-theta"/>
 			<channel id="posture-x" typeId="posture-x"/>
 			<channel id="posture-y" typeId="posture-y"/>
-			<channel id="command" typeId="mower-command"/>
+			<channel id="error-code" typeId="error-code"/>
+			<!-- <channel id="signal-strength" typeId="signal-strength"/> -->
+			<!-- <channel id="location" typeId="mower-location"/> -->
 		</channels>
+
+		<representation-property>deviceId</representation-property>
 
 		<config-description>
 			<parameter name="deviceId" type="text" required="true">
@@ -66,6 +72,10 @@
 		<item-type>String</item-type>
 		<label>Status</label>
 		<description>Current operational state of the mower.</description>
+		<tags>
+			<tag>Control</tag>
+			<tag>Mode</tag>
+		</tags>
 		<state readOnly="true">
 			<options>
 				<option value="idle">Idle</option>
@@ -80,10 +90,25 @@
 		</state>
 	</channel-type>
 
+	<channel-type id="battery-level">
+		<item-type>Number:Dimensionless</item-type>
+		<label>Battery Level</label>
+		<description>Current battery level of the mower (percentage).</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>StateOfCharge</tag>
+		</tags>
+		<state readOnly="true" pattern="%d %%"/>
+	</channel-type>
+
 	<channel-type id="signal-strength">
 		<item-type>Number</item-type>
 		<label>Signal Strength</label>
 		<description>RSSI signal strength of the mower (dBm).</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>SignalStrength</tag>
+		</tags>
 		<state readOnly="true" pattern="%d dBm"/>
 	</channel-type>
 
@@ -91,6 +116,10 @@
 		<item-type>Location</item-type>
 		<label>Location</label>
 		<description>Current GPS position of the mower (latitude, longitude).</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>GeoLocation</tag>
+		</tags>
 		<state readOnly="true"/>
 	</channel-type>
 
@@ -98,41 +127,65 @@
 		<item-type>String</item-type>
 		<label>Error Code</label>
 		<description>Error code reported by the mower, or "none" if there is no error.</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Info</tag>
+		</tags>
 		<state readOnly="true"/>
 	</channel-type>
 
 	<channel-type id="current-mow-boundary">
 		<item-type>Number</item-type>
 		<label>Current Mow Boundary</label>
-		<description>Boundary identifier reported by the location telemetry stream.</description>
+		<description>The boundary identifier where the mower is currently operating.</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Info</tag>
+		</tags>
 		<state readOnly="true"/>
 	</channel-type>
 
 	<channel-type id="current-mow-progress">
 		<item-type>Number:Dimensionless</item-type>
 		<label>Current Mow Progress</label>
-		<description>Mowing progress percentage reported by the location telemetry stream (raw value divided by 100).</description>
+		<description>The mowing progress within the current boundary.</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Progress</tag>
+		</tags>
 		<state readOnly="true" pattern="%.2f %%"/>
 	</channel-type>
 
 	<channel-type id="mowing-percentage">
 		<item-type>Number:Dimensionless</item-type>
 		<label>Mowing Percentage</label>
-		<description>Current mowing completion percentage from the location telemetry stream.</description>
+		<description>The overall mowing progress for the current task.</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Progress</tag>
+		</tags>
 		<state readOnly="true" pattern="%d %%"/>
 	</channel-type>
 
 	<channel-type id="mowing-week-area">
 		<item-type>Number:Area</item-type>
 		<label>Mowing Week Area</label>
-		<description>Total area reported as mowed this week by the location telemetry stream (raw value in square meters).</description>
+		<description>Total area mowed this week.</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Info</tag>
+		</tags>
 		<state readOnly="true" pattern="%.2f %unit%"/>
 	</channel-type>
 
 	<channel-type id="subtotal-area">
 		<item-type>Number:Area</item-type>
 		<label>Subtotal Area</label>
-		<description>Current activity subtotal area reported by the location telemetry stream (raw value in square meters).</description>
+		<description>Current activity subtotal area.</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Info</tag>
+		</tags>
 		<state readOnly="true" pattern="%.2f %unit%"/>
 	</channel-type>
 
@@ -140,27 +193,43 @@
 		<item-type>String</item-type>
 		<label>Mow Start Type</label>
 		<description>Mowing start type indicator from the location telemetry stream (format to be determined).</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Info</tag>
+		</tags>
 		<state readOnly="true"/>
 	</channel-type>
 
 	<channel-type id="posture-theta">
 		<item-type>Number:Angle</item-type>
 		<label>Posture Theta</label>
-		<description>Heading angle reported by the location telemetry stream.</description>
+		<description>Mower's current heading angle.</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Position</tag>
+		</tags>
 		<state readOnly="true" pattern="%.3f %unit%"/>
 	</channel-type>
 
 	<channel-type id="posture-x">
 		<item-type>Number</item-type>
 		<label>Posture X</label>
-		<description>Posture X coordinate inside the current zone reported by the location telemetry stream.</description>
+		<description>Mower's current X relative coordinate.</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Position</tag>
+		</tags>
 		<state readOnly="true"/>
 	</channel-type>
 
 	<channel-type id="posture-y">
 		<item-type>Number</item-type>
 		<label>Posture Y</label>
-		<description>Posture Y coordinate inside the current zone reported by the location telemetry stream.</description>
+		<description>Mower's current Y relative coordinate.</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Position</tag>
+		</tags>
 		<state readOnly="true"/>
 	</channel-type>
 
@@ -168,6 +237,10 @@
 		<item-type>String</item-type>
 		<label>Command</label>
 		<description>Send a command to the mower.</description>
+		<tags>
+			<tag>Control</tag>
+			<tag>Mode</tag>
+		</tags>
 		<state>
 			<options>
 				<option value="start">Start Mowing</option>
