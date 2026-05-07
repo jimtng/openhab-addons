@@ -109,7 +109,9 @@ public class NavimowAuthServlet extends HttpServlet {
         sb.append("body{font-family:sans-serif;max-width:600px;margin:2em auto;padding:0 1em;}\n");
         sb.append(".bridge{border:1px solid #ccc;border-radius:4px;padding:1em;margin:1em 0;}\n");
         sb.append(".authorized{border-color:#2e7d32;background:#f1f8e9;}\n");
+        sb.append(".authorized .status{color:#2e7d32;}\n");
         sb.append(".not-authorized{border-color:#c62828;background:#fff8f8;}\n");
+        sb.append(".not-authorized .status{color:#c62828;}\n");
         sb.append(".msg-ok{color:#2e7d32;font-weight:bold;}\n");
         sb.append(".msg-error{color:#c62828;font-weight:bold;}\n");
         sb.append("a.btn{display:inline-block;padding:.4em 1em;background:#1565c0;color:#fff;");
@@ -134,7 +136,7 @@ public class NavimowAuthServlet extends HttpServlet {
                 sb.append("<h2>").append(escapeHtml(handler.getLabel())).append("</h2>\n");
                 sb.append("<p>Thing UID: <code>").append(escapeHtml(handler.getThing().getUID().toString()))
                         .append("</code></p>\n");
-                sb.append("<p>Status: <strong>").append(authorized ? "Authorized" : "Not authorized")
+                sb.append("<p>Status: <strong class=\"status\">").append(authorized ? "Authorized" : "Not authorized")
                         .append("</strong></p>\n");
                 String authorizeUrl = handler.formatAuthorizationUrl(servletBaseURL);
                 if (!authorizeUrl.isEmpty()) {
