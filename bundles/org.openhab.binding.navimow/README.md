@@ -24,6 +24,8 @@ This binding uses OAuth2 to authenticate with the Navimow cloud.
    http://<openhab-host>:8080/navimow
    ```
 
+   To authorize a single bridge directly, open `http://<openhab-host>:8080/navimow/<thingId>` instead.
+
 1. Click the **Authorize** button next to your bridge.
    You will be redirected to the Navimow login page.
 
@@ -37,7 +39,7 @@ This binding uses OAuth2 to authenticate with the Navimow cloud.
 Navimow access tokens are typically short-lived (often around 1–2 days).
 
 - If Navimow provides a `refresh_token` during authorization, the binding will try to refresh the access token automatically before expiry and retry once after an authentication rejection.
-- If no `refresh_token` is available, or the refresh token is no longer accepted by Navimow, the bridge goes **OFFLINE** with _"Authentication failed"_ and you must reauthorize via `http://<openhab-host>:8080/navimow`.
+- If no `refresh_token` is available, or the refresh token is no longer accepted by Navimow, the bridge goes **OFFLINE** with _"Authentication failed"_ and you must reauthorize via `http://<openhab-host>:8080/navimow/<thingId>`.
 
 ## Discovery
 
@@ -95,7 +97,7 @@ Bridge navimow:bridge:myaccount "Navimow Account" {
 }
 ```
 
-After adding the bridge, authorize it at `http://<openhab-host>:8080/navimow`.
+After adding the bridge, authorize it at `http://<openhab-host>:8080/navimow/<thingId>` or use `http://<openhab-host>:8080/navimow` to choose from all configured bridges.
 The recommended approach is to add only the bridge in the things file and let discovery populate the mower thing.
 
 ### Items File

@@ -95,6 +95,17 @@ public class NavimowAuthService {
     }
 
     /**
+     * Returns the registered bridge handler with the given thing ID.
+     *
+     * @param thingId the bridge thing ID
+     * @return the matching bridge handler, or null if not found
+     */
+    public @Nullable NavimowBridgeHandler getBridgeHandlerByThingId(String thingId) {
+        Optional<NavimowBridgeHandler> match = handlers.stream().filter(h -> h.hasThingId(thingId)).findFirst();
+        return match.orElse(null);
+    }
+
+    /**
      * Handles the OAuth2 authorization callback. Finds the bridge by the state value (thing UID),
      * exchanges the authorization code for an access token, and triggers reconnection.
      *

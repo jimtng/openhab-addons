@@ -59,7 +59,16 @@ public class NavimowAuthServlet extends HttpServlet {
 
         logger.debug("Navimow auth servlet GET: {}", req.getRequestURI());
 
-        String servletBaseURL = req.getRequestURL().toString();
+        StringBuffer requestURL = req.getRequestURL();
+        if (requestURL == null) {
+            logger.warn("Navimow auth servlet request URL is missing");
+            resp.sendError(HttpServletResponse.SC_BAD_REQUEST);
+            return;
+        }
+
+        String servletBaseURL = requestURL.toString();
+        @Nullable
+        String selectedThingId = extractThingId(req);
         String queryString = req.getQueryString();
 
         String statusMessage = "";
@@ -87,11 +96,11 @@ public class NavimowAuthServlet extends HttpServlet {
 
         resp.setContentType(CONTENT_TYPE);
         PrintWriter writer = resp.getWriter();
-        writer.println(buildPage(servletBaseURL, statusMessage));
+        writer.println(buildPage(servletBaseURL, selectedThingId, statusMessage));
         writer.close();
     }
 
-    private String buildPage(String servletBaseURL, String statusMessage) {
+    private String buildPage(String servletBaseURL, @Nullable String selectedThingId, String statusMessage) {
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html>\n<html>\n<head>\n");
         sb.append("<meta charset=\"utf-8\">\n");
@@ -109,10 +118,15 @@ public class NavimowAuthServlet extends HttpServlet {
         sb.append("<h1>Navimow Authorization</h1>\n");
         sb.append(statusMessage);
 
-        List<NavimowBridgeHandler> bridgeHandlers = authService.getBridgeHandlers();
+        List<NavimowBridgeHandler> bridgeHandlers = getBridgeHandlers(selectedThingId);
         if (bridgeHandlers.isEmpty()) {
-            sb.append(
-                    "<p>No Navimow bridges configured. Add a <em>Navimow Account</em> bridge in openHAB first.</p>\n");
+            if (selectedThingId != null) {
+                sb.append("<p>No Navimow bridge found for thing ID <code>").append(escapeHtml(selectedThingId))
+                        .append("</code>.</p>\n");
+            } else {
+                sb.append(
+                        "<p>No Navimow bridges configured. Add a <em>Navimow Account</em> bridge in openHAB first.</p>\n");
+            }
         } else {
             for (NavimowBridgeHandler handler : bridgeHandlers) {
                 boolean authorized = handler.isAuthorized();
@@ -133,6 +147,25 @@ public class NavimowAuthServlet extends HttpServlet {
 
         sb.append("</body>\n</html>\n");
         return sb.toString();
+    }
+
+    private List<NavimowBridgeHandler> getBridgeHandlers(@Nullable String selectedThingId) {
+        if (selectedThingId == null) {
+            return authService.getBridgeHandlers();
+        }
+
+        NavimowBridgeHandler handler = authService.getBridgeHandlerByThingId(selectedThingId);
+        return handler == null ? List.of() : List.of(handler);
+    }
+
+    private @Nullable String extractThingId(HttpServletRequest req) {
+        String pathInfo = req.getPathInfo();
+        if (pathInfo == null || pathInfo.isBlank() || "/".equals(pathInfo)) {
+            return null;
+        }
+
+        String normalized = pathInfo.startsWith("/") ? pathInfo.substring(1) : pathInfo;
+        return normalized.isEmpty() || normalized.contains("/") ? null : normalized;
     }
 
     private String escapeHtml(String text) {

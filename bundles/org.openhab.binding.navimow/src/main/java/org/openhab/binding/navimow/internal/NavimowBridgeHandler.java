@@ -21,6 +21,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -117,8 +118,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         this.api = navimowApi;
 
         if (!isAuthorized()) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    "@text/offline.config-error-no-auth");
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, getAuthorizationRequiredMessage());
             return;
         }
 
@@ -205,6 +205,16 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
     }
 
     /**
+     * Returns whether this handler's thing ID equals the given string.
+     *
+     * @param thingId the thing ID string to compare
+     * @return true if equal
+     */
+    public boolean hasThingId(String thingId) {
+        return thing.getUID().getId().equalsIgnoreCase(thingId);
+    }
+
+    /**
      * Returns the thing label, or the thing UID ID if no label is set.
      *
      * @return a human-readable label for this bridge
@@ -212,6 +222,20 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
     public String getLabel() {
         Object label = thing.getLabel();
         return label != null ? label.toString() : thing.getUID().getId();
+    }
+
+    private String getThingAuthorizationPath() {
+        return NavimowBindingConstants.NAVIMOW_SERVLET_ALIAS + "/" + thing.getUID().getId();
+    }
+
+    private String getAuthorizationRequiredMessage() {
+        return "Not authorized. Visit http(s)://[YOUROPENHAB]:[YOURPORT]" + getThingAuthorizationPath()
+                + " to authorize.";
+    }
+
+    private String getReauthorizationRequiredMessage() {
+        return "Authentication failed. Please re-authorize at http(s)://[YOUROPENHAB]:[YOURPORT]"
+                + getThingAuthorizationPath();
     }
 
     /**
@@ -262,7 +286,8 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         } catch (NavimowApiException e) {
             throw e;
         } catch (OAuthException e) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "@text/offline.config-error-auth");
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
+                    getReauthorizationRequiredMessage());
             throw new NavimowApiException("Authorization failed: " + e.getMessage(), e);
         }
     }
@@ -292,16 +317,18 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
             cloudAuthenticated = false;
             cancelPollingJob();
             disconnectMqtt();
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "@text/offline.config-error-auth");
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
+                    getReauthorizationRequiredMessage());
             return null;
         } catch (NavimowApiException e) {
-            if (e.getMessage().contains("CODE_OAUTH_INFO_ILLEGAL")) {
-                LOGGER.warn("OAuth token became invalid while polling device {}: {}", deviceId, e.getMessage());
+            String message = Objects.requireNonNullElse(e.getMessage(), "");
+            if (message.contains("CODE_OAUTH_INFO_ILLEGAL")) {
+                LOGGER.warn("OAuth token became invalid while polling device {}: {}", deviceId, message);
                 cloudAuthenticated = false;
                 cancelPollingJob();
                 disconnectMqtt();
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                        "@text/offline.config-error-auth");
+                        getReauthorizationRequiredMessage());
                 return null;
             }
             LOGGER.debug("Error polling device {}: {}", deviceId, e.getMessage());
@@ -410,7 +437,8 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
             cloudAuthenticated = false;
             cancelPollingJob();
             disconnectMqtt();
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "@text/offline.config-error-auth");
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
+                    getReauthorizationRequiredMessage());
         } catch (NavimowApiException e) {
             LOGGER.warn("Failed to connect to Navimow cloud: {}", e.getMessage());
             cloudAuthenticated = false;
