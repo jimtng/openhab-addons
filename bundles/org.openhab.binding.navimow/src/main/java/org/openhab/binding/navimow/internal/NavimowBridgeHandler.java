@@ -77,6 +77,8 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(NavimowBridgeHandler.class);
     private static final int MQTT_RECONNECT_SECS = 30;
+    private static final int MQTT_KEEP_ALIVE_SECS = 60;
+    private static final int MQTT_HEALTH_CHECK_SECS = 60;
     private static final int INITIAL_POLLING_DELAY_SECS = 5;
 
     private final org.eclipse.jetty.client.HttpClient httpClient;
@@ -86,9 +88,14 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
     private @Nullable NavimowApi api;
     private @Nullable Mqtt3AsyncClient mqttClient;
     private @Nullable ScheduledFuture<?> pollingJob;
+    private @Nullable ScheduledFuture<?> mqttReconnectJob;
+    private @Nullable ScheduledFuture<?> mqttHealthJob;
     private volatile boolean disposed;
     private volatile boolean suppressMqttReconnect;
     private volatile boolean cloudAuthenticated;
+    private volatile boolean mqttConnecting;
+    private volatile boolean mqttConnected;
+    private volatile boolean mqttEverConnected;
 
     // deviceId → listener (registered by mower handlers)
     private final Map<String, Consumer<NavimowMowerState>> mowerListeners = new ConcurrentHashMap<>();
@@ -107,6 +114,9 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         disposed = false;
         suppressMqttReconnect = false;
         cloudAuthenticated = false;
+        mqttConnecting = false;
+        mqttConnected = false;
+        mqttEverConnected = false;
         NavimowBridgeConfiguration config = getConfigAs(NavimowBridgeConfiguration.class);
 
         OAuthClientService oAuthClientService = oAuthFactory.createOAuthClientService(thing.getUID().getAsString(),
@@ -131,6 +141,8 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         disposed = true;
         cloudAuthenticated = false;
         cancelPollingJob();
+        cancelMqttReconnectJob();
+        cancelMqttHealthJob();
         disconnectMqtt();
         api = null;
         OAuthClientService service = oAuthService;
@@ -457,6 +469,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         Mqtt3AsyncClient oldClient = mqttClient;
         if (oldClient != null) {
             LOGGER.debug("Disconnecting old MQTT client to prepare for fresh connection");
+            mqttConnected = false;
             suppressMqttReconnect = true;
             oldClient.disconnect();
             mqttClient = null;
@@ -539,33 +552,38 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         // We need to fetch fresh credentials on reconnect, not use stale ones
         final Mqtt3AsyncClient[] listenerClientRef = new Mqtt3AsyncClient[1];
         var builder = Mqtt3Client.builder().serverHost(resolvedHost).serverPort(resolvedPort).identifier(clientId)
-                .addDisconnectedListener(context -> {
+                .addConnectedListener(context -> scheduler.execute(() -> {
                     Mqtt3AsyncClient listenerClient = listenerClientRef[0];
                     if (listenerClient == null || mqttClient != listenerClient) {
-                        LOGGER.debug("MQTT disconnected from stale client: {}", context.getCause().getMessage());
+                        LOGGER.debug("MQTT connected event received from stale client");
                         return;
                     }
+                    mqttConnecting = false;
+                    mqttConnected = true;
+                    cancelMqttReconnectJob();
+                    scheduleMqttHealthJob();
+                    if (mqttEverConnected) {
+                        LOGGER.info("MQTT reconnected to Navimow broker");
+                    } else {
+                        LOGGER.debug("MQTT connected to Navimow broker");
+                    }
+                    mqttEverConnected = true;
+                })).addDisconnectedListener(context -> {
+                    Mqtt3AsyncClient listenerClient = listenerClientRef[0];
+                    if (listenerClient == null || mqttClient != listenerClient) {
+                        LOGGER.debug("MQTT disconnected from stale client: {}", formatMqttCause(context.getCause()));
+                        return;
+                    }
+                    mqttConnecting = false;
+                    mqttConnected = false;
                     if (disposed || suppressMqttReconnect || !cloudAuthenticated) {
-                        LOGGER.debug("MQTT disconnected: {} (reconnect suppressed)", context.getCause().getMessage());
+                        LOGGER.debug("MQTT disconnected: {} (reconnect suppressed)",
+                                formatMqttCause(context.getCause()));
                         return;
                     }
                     LOGGER.warn("MQTT disconnected: {} (will attempt reconnect with fresh credentials)",
-                            context.getCause().getMessage());
-                    // Schedule reconnect with fresh credentials after auth failures.
-                    scheduler.schedule(() -> {
-                        if (disposed || !cloudAuthenticated) {
-                            LOGGER.debug("Skipping MQTT reconnect because bridge is disposed or unauthenticated");
-                            return;
-                        }
-                        LOGGER.debug(
-                                "Attempting MQTT reconnect with fresh credentials (auth token may have expired)...");
-                        NavimowApi currentApi = api;
-                        if (currentApi != null) {
-                            connectMqtt(currentApi);
-                        } else {
-                            LOGGER.warn("Cannot reconnect - API is null");
-                        }
-                    }, 10, TimeUnit.SECONDS);
+                            formatMqttCause(context.getCause()));
+                    scheduleMqttReconnect("disconnected");
                 });
 
         if (useWebSocket) {
@@ -598,6 +616,8 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         Mqtt3AsyncClient client = builder.buildAsync();
         listenerClientRef[0] = client;
         this.mqttClient = client;
+        mqttConnecting = true;
+        scheduleMqttHealthJob();
 
         // Set global PUBLISH handler — all incoming MQTT messages arrive here
         client.publishes(MqttGlobalPublishFilter.ALL, publish -> scheduler
@@ -606,14 +626,24 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         // Connect with MQTT credentials - wait for CONNACK before subscribing
         final String finalMqttUser = mqttUser;
         final String finalMqttPassword = mqttPassword;
-        var connectBuilder = client.connectWith().keepAlive(2400);
+        var connectBuilder = client.connectWith().keepAlive(MQTT_KEEP_ALIVE_SECS);
         LOGGER.debug("MQTT connecting WITH credentials: user={} password length={} bytes", finalMqttUser,
                 finalMqttPassword.length());
         connectBuilder.simpleAuth().username(finalMqttUser).password(finalMqttPassword.getBytes(StandardCharsets.UTF_8))
                 .applySimpleAuth();
         connectBuilder.send().whenComplete((ack, ex) -> {
             if (ex != null) {
-                LOGGER.warn("MQTT CONNACK failed: {}", ex.getMessage());
+                scheduler.execute(() -> {
+                    mqttConnecting = false;
+                    mqttConnected = false;
+                    if (mqttClient == client && cloudAuthenticated && !disposed) {
+                        LOGGER.warn("MQTT connection failed: {} (will attempt reconnect with fresh credentials)",
+                                formatMqttCause(ex));
+                        scheduleMqttReconnect("connection failed");
+                    } else {
+                        LOGGER.debug("MQTT connection failed on stale client: {}", formatMqttCause(ex));
+                    }
+                });
             } else {
                 LOGGER.debug("MQTT CONNACK received - credentials accepted");
                 // Only subscribe AFTER CONNACK is confirmed
@@ -761,9 +791,90 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
     private void disconnectMqtt() {
         Mqtt3AsyncClient client = mqttClient;
         if (client != null) {
+            mqttConnecting = false;
+            mqttConnected = false;
+            suppressMqttReconnect = true;
             client.disconnect();
             mqttClient = null;
+            suppressMqttReconnect = false;
         }
+    }
+
+    private void scheduleMqttReconnect(String reason) {
+        if (disposed || !cloudAuthenticated) {
+            LOGGER.debug("Skipping MQTT reconnect scheduling because bridge is disposed or unauthenticated");
+            return;
+        }
+        ScheduledFuture<?> reconnectJob = mqttReconnectJob;
+        if (reconnectJob != null && !reconnectJob.isDone()) {
+            LOGGER.debug("MQTT reconnect is already scheduled; latest reason: {}", reason);
+            return;
+        }
+        mqttReconnectJob = scheduler.schedule(() -> {
+            mqttReconnectJob = null;
+            if (disposed || !cloudAuthenticated) {
+                LOGGER.debug("Skipping MQTT reconnect because bridge is disposed or unauthenticated");
+                return;
+            }
+            LOGGER.info("Attempting MQTT reconnect with fresh credentials after {}", reason);
+            NavimowApi currentApi = api;
+            if (currentApi != null) {
+                connectMqtt(currentApi);
+            } else {
+                LOGGER.warn("Cannot reconnect MQTT because API is null");
+            }
+        }, MQTT_RECONNECT_SECS, TimeUnit.SECONDS);
+    }
+
+    private void scheduleMqttHealthJob() {
+        ScheduledFuture<?> healthJob = mqttHealthJob;
+        if (healthJob != null && !healthJob.isDone()) {
+            return;
+        }
+        mqttHealthJob = scheduler.scheduleWithFixedDelay(this::checkMqttConnection, MQTT_HEALTH_CHECK_SECS,
+                MQTT_HEALTH_CHECK_SECS, TimeUnit.SECONDS);
+        LOGGER.debug("Scheduled MQTT connection health check every {}s", MQTT_HEALTH_CHECK_SECS);
+    }
+
+    private void checkMqttConnection() {
+        if (disposed || !cloudAuthenticated || mqttConnecting) {
+            return;
+        }
+        Mqtt3AsyncClient client = mqttClient;
+        if (client == null) {
+            if (mqttConnected) {
+                mqttConnected = false;
+                LOGGER.warn("MQTT connection health check detected missing client");
+            }
+            scheduleMqttReconnect("missing MQTT client");
+            return;
+        }
+        if (!client.getState().isConnected()) {
+            mqttConnected = false;
+            LOGGER.warn("MQTT connection health check detected client state {}", client.getState());
+            scheduleMqttReconnect("client state " + client.getState());
+        }
+    }
+
+    private void cancelMqttReconnectJob() {
+        ScheduledFuture<?> job = mqttReconnectJob;
+        if (job != null) {
+            job.cancel(true);
+            mqttReconnectJob = null;
+        }
+    }
+
+    private void cancelMqttHealthJob() {
+        ScheduledFuture<?> job = mqttHealthJob;
+        if (job != null) {
+            job.cancel(true);
+            mqttHealthJob = null;
+        }
+    }
+
+    private String formatMqttCause(Throwable cause) {
+        String message = cause.getMessage();
+        return message != null && !message.isBlank() ? message : cause.getClass().getSimpleName();
     }
 
     private void schedulePollingJob() {
