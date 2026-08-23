@@ -20,7 +20,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Objects;
 
+import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,15 +34,17 @@ import org.openhab.core.test.java.JavaOSGiTest;
  *
  * @author Jimmy Tanagra - Initial contribution
  */
+@NonNullByDefault
 public class YamlComposerWatchServiceOSGiTest extends JavaOSGiTest {
-    private YamlComposerWatchService watchService;
-    private Path testSourceDir;
-    private Path testOutputDir;
+
+    private YamlComposerWatchService watchService = Objects.requireNonNull(getService(YamlComposerWatchService.class));
+    private Path testSourceDir = Path.of("dummy");
+    private Path testOutputDir = Path.of("dummy");
 
     @BeforeEach
     public void setUp() throws IOException {
-        watchService = getService(YamlComposerWatchService.class);
-        assertNotNull(watchService);
+        // YamlComposerWatchService service = getService(YamlComposerWatchService.class);
+        // watchService = Objects.requireNonNull(service);
 
         testSourceDir = ComposerConfig.sourceRoot();
         testOutputDir = ComposerConfig.outputRoot();
@@ -130,12 +134,14 @@ public class YamlComposerWatchServiceOSGiTest extends JavaOSGiTest {
         }
 
         Files.walkFileTree(path, new SimpleFileVisitor<>() {
+            @NonNullByDefault({})
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                 Files.deleteIfExists(file);
                 return FileVisitResult.CONTINUE;
             }
 
+            @NonNullByDefault({})
             @Override
             public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
                 Files.deleteIfExists(dir);
