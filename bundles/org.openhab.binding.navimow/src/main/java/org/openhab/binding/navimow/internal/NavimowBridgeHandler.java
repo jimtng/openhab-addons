@@ -554,7 +554,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         var builder = Mqtt3Client.builder().serverHost(resolvedHost).serverPort(resolvedPort).identifier(clientId)
                 .addConnectedListener(context -> scheduler.execute(() -> {
                     Mqtt3AsyncClient listenerClient = listenerClientRef[0];
-                    if (listenerClient == null || mqttClient != listenerClient) {
+                    if (listenerClient == null || !Objects.equals(mqttClient, listenerClient)) {
                         LOGGER.debug("MQTT connected event received from stale client");
                         return;
                     }
@@ -568,9 +568,10 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
                         LOGGER.debug("MQTT connected to Navimow broker");
                     }
                     mqttEverConnected = true;
-                })).addDisconnectedListener(context -> {
+                })) //
+                .addDisconnectedListener(context -> {
                     Mqtt3AsyncClient listenerClient = listenerClientRef[0];
-                    if (listenerClient == null || mqttClient != listenerClient) {
+                    if (listenerClient == null || !Objects.equals(mqttClient, listenerClient)) {
                         LOGGER.debug("MQTT disconnected from stale client: {}", formatMqttCause(context.getCause()));
                         return;
                     }
@@ -636,7 +637,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
                 scheduler.execute(() -> {
                     mqttConnecting = false;
                     mqttConnected = false;
-                    if (mqttClient == client && cloudAuthenticated && !disposed) {
+                    if (Objects.equals(mqttClient, client) && cloudAuthenticated && !disposed) {
                         LOGGER.warn("MQTT connection failed: {} (will attempt reconnect with fresh credentials)",
                                 formatMqttCause(ex));
                         scheduleMqttReconnect("connection failed");
