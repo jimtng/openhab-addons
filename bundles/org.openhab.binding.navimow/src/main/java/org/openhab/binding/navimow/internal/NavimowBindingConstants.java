@@ -55,6 +55,9 @@ public class NavimowBindingConstants {
     public static final String API_BASE_URL = "https://navimow-fra.ninebot.com";
     public static final String MQTT_DEFAULT_BROKER = "mqtt.navimow.com";
     public static final int MQTT_DEFAULT_PORT = 1883;
+    public static final int MQTT_STALE_SECONDS = 90;
+    public static final int MQTT_KEEP_ALIVE_SECONDS = 120;
+    public static final int HTTP_FALLBACK_INTERVAL_SECONDS = 60;
 
     // MQTT topic templates (per-device, used only for extracting device ID from incoming topics)
     public static final String MQTT_STATE_TOPIC_TEMPLATE = "/downlink/vehicle/%s/realtimeDate/state";

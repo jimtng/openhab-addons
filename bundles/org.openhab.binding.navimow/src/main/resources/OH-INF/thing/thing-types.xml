@@ -13,7 +13,7 @@
 			<parameter name="pollingInterval" type="integer" unit="s" min="60">
 				<label>Polling Interval</label>
 				<description>Interval in seconds for HTTP fallback polling. Set to 0 to disable polling (MQTT only).</description>
-				<default>3600</default>
+				<default>60</default>
 				<advanced>true</advanced>
 			</parameter>
 			<parameter name="apiBaseUrl" type="text">

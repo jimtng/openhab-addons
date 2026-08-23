@@ -24,9 +24,9 @@ public class NavimowBridgeConfiguration {
 
     /**
      * Interval in seconds for HTTP polling fallback when MQTT data is stale.
-     * Default: 3600 (1 hour).
+     * Default: 60 seconds. Polling is only performed while MQTT state data is stale.
      */
-    public int pollingInterval = 3600;
+    public int pollingInterval = NavimowBindingConstants.HTTP_FALLBACK_INTERVAL_SECONDS;
 
     /** Override the Navimow API base URL. Useful for testing. */
     public String apiBaseUrl = NavimowBindingConstants.API_BASE_URL;

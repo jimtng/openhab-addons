@@ -77,7 +77,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(NavimowBridgeHandler.class);
     private static final int MQTT_RECONNECT_SECS = 30;
-    private static final int MQTT_KEEP_ALIVE_SECS = 60;
+    private static final int MQTT_KEEP_ALIVE_SECS = NavimowBindingConstants.MQTT_KEEP_ALIVE_SECONDS;
     private static final int MQTT_HEALTH_CHECK_SECS = 60;
     private static final int INITIAL_POLLING_DELAY_SECS = 5;
 
@@ -101,6 +101,9 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
     private final Map<String, Consumer<NavimowMowerState>> mowerListeners = new ConcurrentHashMap<>();
     // deviceId → last known merged state (used to avoid UNDEF regressions from partial MQTT payloads)
     private final Map<String, NavimowMowerState> lastKnownStates = new ConcurrentHashMap<>();
+    // Attributes may continue arriving while state packets stop when the mower is docked or charging.
+    private final Map<String, Long> lastMqttStateUpdates = new ConcurrentHashMap<>();
+    private volatile @Nullable NavimowMqttInfo cachedMqttInfo;
 
     public NavimowBridgeHandler(Bridge bridge, OAuthFactory oAuthFactory,
             org.eclipse.jetty.client.HttpClient httpClient) {
@@ -193,6 +196,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
     public void unregisterMowerListener(String deviceId) {
         mowerListeners.remove(deviceId);
         lastKnownStates.remove(deviceId);
+        lastMqttStateUpdates.remove(deviceId);
         LOGGER.debug("Unregistered listener for device {}", deviceId);
     }
 
@@ -497,6 +501,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         try {
             LOGGER.debug("Fetching MQTT credentials from Navimow API...");
             NavimowMqttInfo mqttInfo = navimowApi.getMqttUserInfo();
+            cachedMqttInfo = copyMqttInfo(mqttInfo);
             String hostFromInfo = mqttInfo.mqttHost;
             if (hostFromInfo != null && !hostFromInfo.isBlank()) {
                 try {
@@ -525,15 +530,38 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
             // Use the WebSocket path provided by the API
             String urlFromInfo = mqttInfo.mqttUrl;
             if (urlFromInfo != null && !urlFromInfo.isBlank()) {
-                wsPath = urlFromInfo;
+                wsPath = Objects.requireNonNull(urlFromInfo);
             }
             mqttUser = mqttInfo.userName;
             mqttPassword = mqttInfo.pwdInfo;
             LOGGER.debug("MQTT credentials fetched: user={} password={} (length={} bytes)", mqttUser,
                     mqttPassword != null ? "***" : "null", mqttPassword != null ? mqttPassword.length() : 0);
         } catch (NavimowApiException e) {
-            LOGGER.warn("Failed to fetch MQTT credentials; skipping MQTT connect: {}", e.getMessage());
-            return;
+            NavimowMqttInfo cached = cachedMqttInfo;
+            if (cached == null || cached.userName == null || cached.pwdInfo == null) {
+                LOGGER.warn("Failed to fetch MQTT credentials; MQTT will remain unavailable: {}", e.getMessage());
+                return;
+            }
+            LOGGER.warn("Failed to fetch MQTT credentials; using cached credentials: {}", e.getMessage());
+            mqttUser = cached.userName;
+            mqttPassword = cached.pwdInfo;
+            String cachedUrl = cached.mqttUrl;
+            if (cachedUrl != null && !cachedUrl.isBlank()) {
+                wsPath = cachedUrl;
+                useWebSocket = cachedUrl.startsWith("ws://") || cachedUrl.startsWith("wss://");
+                useSecure = cachedUrl.startsWith("wss://");
+            }
+            String cachedHost = cached.mqttHost;
+            if (cachedHost != null && !cachedHost.isBlank()) {
+                try {
+                    URI uri = new URI(cachedHost);
+                    resolvedHost = uri.getHost() != null ? uri.getHost() : cachedHost;
+                    resolvedPort = uri.getPort() > 0 ? uri.getPort()
+                            : (useSecure ? 8883 : NavimowBindingConstants.MQTT_DEFAULT_PORT);
+                } catch (URISyntaxException ignored) {
+                    resolvedHost = cachedHost;
+                }
+            }
         }
 
         if (mqttUser == null || mqttPassword == null) {
@@ -764,6 +792,9 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
                 return;
             }
             NavimowMowerState mergedState = mergeWithLastKnownState(deviceId, parsedState);
+            if ("state".equals(topicChannel)) {
+                lastMqttStateUpdates.put(deviceId, System.nanoTime());
+            }
 
             LOGGER.debug(
                     "MQTT accepted device={} channel={} parsed[state={},battery={},signal={},lat={},lon={},error={},boundary={},progress={},percentage={},weekArea={},subtotalArea={},mowStartType={},postureTheta={},postureX={},postureY={}] merged[state={},battery={},signal={},lat={},lon={},error={},boundary={},progress={},percentage={},weekArea={},subtotalArea={},mowStartType={},postureTheta={},postureX={},postureY={}] (raw payload: {})",
@@ -878,6 +909,15 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
         return message != null && !message.isBlank() ? message : cause.getClass().getSimpleName();
     }
 
+    private NavimowMqttInfo copyMqttInfo(NavimowMqttInfo source) {
+        NavimowMqttInfo copy = new NavimowMqttInfo();
+        copy.mqttHost = source.mqttHost;
+        copy.mqttUrl = source.mqttUrl;
+        copy.userName = source.userName;
+        copy.pwdInfo = source.pwdInfo;
+        return copy;
+    }
+
     private void schedulePollingJob() {
         cancelPollingJob();
         NavimowBridgeConfiguration config = getConfigAs(NavimowBridgeConfiguration.class);
@@ -898,10 +938,17 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
     }
 
     private void pollAllDevices() {
+        long now = System.nanoTime();
         for (Map.Entry<String, Consumer<NavimowMowerState>> entry : mowerListeners.entrySet()) {
+            Long lastStateUpdate = lastMqttStateUpdates.get(entry.getKey());
+            if (lastStateUpdate != null
+                    && now - lastStateUpdate <= TimeUnit.SECONDS.toNanos(NavimowBindingConstants.MQTT_STALE_SECONDS)) {
+                continue;
+            }
             NavimowMowerState state = fetchDeviceStatus(entry.getKey());
             if (state != null) {
                 rememberLastState(entry.getKey(), state);
+                LOGGER.info("Using HTTP fallback for stale MQTT state of device {}", entry.getKey());
                 entry.getValue().accept(state);
             }
         }
