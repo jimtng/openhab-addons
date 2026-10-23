@@ -879,7 +879,7 @@ public class NavimowApi {
         }
         try {
             return el.getAsInt();
-        } catch (NumberFormatException e) {
+        } catch (RuntimeException e) {
             return null;
         }
     }
@@ -891,7 +891,7 @@ public class NavimowApi {
         }
         try {
             return el.getAsDouble();
-        } catch (NumberFormatException e) {
+        } catch (RuntimeException e) {
             return null;
         }
     }

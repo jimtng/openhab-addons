@@ -59,7 +59,6 @@ import org.slf4j.LoggerFactory;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.google.gson.JsonSyntaxException;
 import com.hivemq.client.mqtt.MqttGlobalPublishFilter;
 import com.hivemq.client.mqtt.datatypes.MqttQos;
 import com.hivemq.client.mqtt.mqtt3.Mqtt3AsyncClient;
@@ -814,7 +813,7 @@ public class NavimowBridgeHandler extends BaseBridgeHandler {
             } else {
                 LOGGER.debug("MQTT accepted but not forwarded: no listener registered for device {}", deviceId);
             }
-        } catch (JsonSyntaxException | IllegalStateException e) {
+        } catch (RuntimeException e) {
             LOGGER.warn("MQTT rejected: JSON parse failed on topic {} payload={} error={}", topic, json,
                     e.getMessage());
         }

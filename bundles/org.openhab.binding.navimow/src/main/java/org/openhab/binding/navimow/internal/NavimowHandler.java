@@ -166,90 +166,75 @@ public class NavimowHandler extends BaseThingHandler {
 
     private void onMowerStateUpdate(NavimowMowerState state) {
         updateStatus(ThingStatus.ONLINE);
-        if (state.state != null && !state.state.isBlank()) {
-            updateState(CHANNEL_STATUS, new StringType(state.state));
-        } else {
-            logger.debug("Skipping status update for {} because state is blank/null (payload: state={})", deviceId,
-                    state.state);
-        }
-
+        updateChannel(CHANNEL_STATUS, () -> updateState(CHANNEL_STATUS, new StringType(state.state)));
         Integer battery = state.battery;
         if (battery != null) {
-            updateState(CHANNEL_BATTERY, new QuantityType<Dimensionless>(battery, Units.PERCENT));
-        } else {
-            logger.debug("Skipping battery update for {} because payload has no battery (payload: battery={})",
-                    deviceId, battery);
+            updateChannel(CHANNEL_BATTERY,
+                    () -> updateState(CHANNEL_BATTERY, new QuantityType<Dimensionless>(battery, Units.PERCENT)));
         }
-
         Integer signalStrength = state.signalStrength;
         if (signalStrength != null) {
-            updateState(CHANNEL_SIGNAL_STRENGTH, new DecimalType(signalStrength));
-        } else {
-            logger.debug(
-                    "Skipping signal update for {} because payload has no signal (payload: signalStrength={} from payload object)",
-                    deviceId, state.signalStrength);
+            updateChannel(CHANNEL_SIGNAL_STRENGTH,
+                    () -> updateState(CHANNEL_SIGNAL_STRENGTH, new DecimalType(signalStrength)));
         }
-
         Double latitude = state.latitude;
         Double longitude = state.longitude;
         if (latitude != null && longitude != null) {
-            updateState(CHANNEL_LOCATION, new PointType(new DecimalType(latitude), new DecimalType(longitude)));
-        } else {
-            logger.debug(
-                    "Skipping location update for {} because payload has no complete coordinates (payload: lat={} lon={})",
-                    deviceId, state.latitude, state.longitude);
+            updateChannel(CHANNEL_LOCATION, () -> updateState(CHANNEL_LOCATION,
+                    new PointType(new DecimalType(latitude), new DecimalType(longitude))));
         }
-
-        if (state.errorCode != null) {
-            updateState(CHANNEL_ERROR_CODE, new StringType(state.errorCode));
-        } else {
-            updateState(CHANNEL_ERROR_CODE, new StringType("none"));
-        }
-
+        updateChannel(CHANNEL_ERROR_CODE, () -> updateState(CHANNEL_ERROR_CODE,
+                new StringType(state.errorCode != null ? state.errorCode : "none")));
         Integer currentMowBoundary = state.currentMowBoundary;
         if (currentMowBoundary != null) {
-            updateState(CHANNEL_CURRENT_MOW_BOUNDARY, new DecimalType(currentMowBoundary));
+            updateChannel(CHANNEL_CURRENT_MOW_BOUNDARY,
+                    () -> updateState(CHANNEL_CURRENT_MOW_BOUNDARY, new DecimalType(currentMowBoundary)));
         }
-
         Double currentMowProgress = state.currentMowProgress;
         if (currentMowProgress != null) {
-            updateState(CHANNEL_CURRENT_MOW_PROGRESS,
-                    new QuantityType<Dimensionless>(currentMowProgress, Units.PERCENT));
+            updateChannel(CHANNEL_CURRENT_MOW_PROGRESS, () -> updateState(CHANNEL_CURRENT_MOW_PROGRESS,
+                    new QuantityType<Dimensionless>(currentMowProgress, Units.PERCENT)));
         }
-
         Integer mowingPercentage = state.mowingPercentage;
         if (mowingPercentage != null) {
-            updateState(CHANNEL_MOWING_PERCENTAGE, new QuantityType<Dimensionless>(mowingPercentage, Units.PERCENT));
+            updateChannel(CHANNEL_MOWING_PERCENTAGE, () -> updateState(CHANNEL_MOWING_PERCENTAGE,
+                    new QuantityType<Dimensionless>(mowingPercentage, Units.PERCENT)));
         }
-
         Double mowingWeekArea = state.mowingWeekArea;
         if (mowingWeekArea != null) {
-            updateState(CHANNEL_MOWING_WEEK_AREA, new QuantityType<Area>(mowingWeekArea, SIUnits.SQUARE_METRE));
+            updateChannel(CHANNEL_MOWING_WEEK_AREA, () -> updateState(CHANNEL_MOWING_WEEK_AREA,
+                    new QuantityType<Area>(mowingWeekArea, SIUnits.SQUARE_METRE)));
         }
-
         Double subtotalArea = state.subtotalArea;
         if (subtotalArea != null) {
-            updateState(CHANNEL_SUBTOTAL_AREA, new QuantityType<Area>(subtotalArea, SIUnits.SQUARE_METRE));
+            updateChannel(CHANNEL_SUBTOTAL_AREA, () -> updateState(CHANNEL_SUBTOTAL_AREA,
+                    new QuantityType<Area>(subtotalArea, SIUnits.SQUARE_METRE)));
         }
-
         String mowStartType = state.mowStartType;
         if (mowStartType != null) {
-            updateState(CHANNEL_MOW_START_TYPE, new StringType(mowStartType));
+            updateChannel(CHANNEL_MOW_START_TYPE,
+                    () -> updateState(CHANNEL_MOW_START_TYPE, new StringType(mowStartType)));
         }
-
         Double postureTheta = state.postureTheta;
         if (postureTheta != null) {
-            updateState(CHANNEL_POSTURE_THETA, new QuantityType<Angle>(postureTheta, Units.RADIAN));
+            updateChannel(CHANNEL_POSTURE_THETA,
+                    () -> updateState(CHANNEL_POSTURE_THETA, new QuantityType<Angle>(postureTheta, Units.RADIAN)));
         }
-
         Double postureX = state.postureX;
         if (postureX != null) {
-            updateState(CHANNEL_POSTURE_X, new DecimalType(postureX));
+            updateChannel(CHANNEL_POSTURE_X, () -> updateState(CHANNEL_POSTURE_X, new DecimalType(postureX)));
         }
-
         Double postureY = state.postureY;
         if (postureY != null) {
-            updateState(CHANNEL_POSTURE_Y, new DecimalType(postureY));
+            updateChannel(CHANNEL_POSTURE_Y, () -> updateState(CHANNEL_POSTURE_Y, new DecimalType(postureY)));
+        }
+    }
+
+    private void updateChannel(String channel, Runnable update) {
+        try {
+            update.run();
+        } catch (RuntimeException e) {
+            logger.warn("Failed to update Navimow channel {} for device {}: {}", channel, deviceId, e.getMessage(), e);
         }
     }
 
